@@ -45,6 +45,19 @@ def decrypt_bytes(data: bytes, key: int = 0xDEADBEEF) -> bytes:
     return bytes(byte_array)
 
 
+def resource_data_bytes(node) -> bytes | None:
+    if getattr(node, 'is_data', False):
+        content = node.content
+        return content.tobytes() if hasattr(content, 'tobytes') else bytes(content)
+
+    for child in getattr(node, 'childs', []):
+        content = resource_data_bytes(child)
+        if content is not None:
+            return content
+
+    return None
+
+
 def main():
     desp = 'UNdUP2: dUP2 Unpacker / Decompiler | Bakasura - 2024'
     parser = argparse.ArgumentParser(
@@ -66,7 +79,9 @@ def main():
     res_manager: lief.PE.ResourcesManager = binary.resources_manager
     rcdata = res_manager.get_node_type(lief.PE.ResourcesManager.TYPE.RCDATA)
 
-    dll_bytes: bytes = rcdata.childs[0].childs[0].content.tobytes()
+    dll_bytes = resource_data_bytes(rcdata)
+    if dll_bytes is None:
+        raise Exception('Could not find DLL bytes in RCDATA resources')
 
     dll_bytes = decrypt_bytes(dll_bytes)
 
@@ -98,13 +113,15 @@ def make_dup2_file(dll_bytes: bytes, dup2_project_path: Path):
         if child.has_name:
             continue
 
+        content = resource_data_bytes(child)
+        if content is None:
+            continue
+
         # count modules
         modules += 1
 
-        content: bytes = child.childs[0].content.tobytes()
-
         # count modules of type "search and replace"
-        if content[0] == 4:
+        if content and content[0] == 4:
             modules_search_and_replace += 1
 
         # put len and content
