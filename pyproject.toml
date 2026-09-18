@@ -1,0 +1,56 @@
+[project]
+name = "undup2"
+version = "0.1.0"
+description = "dUP2 Unpacker / Decompiler"
+readme = "README.md"
+authors = [
+    { name = "Bakasura", email = "bakasura@protonmail.ch" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "lief>=1.0.0",
+]
+
+[project.scripts]
+undup2 = "undup2:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle (estilo)
+    "W", # pycodestyle (warnings)
+    "F", # Pyflakes (errores de lógica)
+    "I", # isort (orden de imports)
+    "B", # flake8-bugbear (errores comunes de diseño)
+    "C4", # flake8-comprehensions (optimiza listas/dict)
+    "UP", # pyupgrade (sintaxis moderna de Python)
+    "N", # pep8-naming (convenciones de nombres)
+    "SIM", # flake8-simplify (ayuda a escribir código más simple)
+    "ANN", # flake8-annotations (opcional, para forzar tipos en funciones)
+]
+ignore = [
+    "Q000", # No usar double quotes
+    "ANN101", # No obliga a tipar 'self' (muy recomendado ignorar esta)
+]
+
+# Esto permite que Ruff borre los imports no usados (F401) automáticamente
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint.isort]
+# Cambia "tu_nombre_de_proyecto" por el nombre de tu carpeta principal
+known-first-party = ["app"]
+combine-as-imports = true
+# Esto deja dos espacios después de los imports para que el código respire
+lines-after-imports = 2

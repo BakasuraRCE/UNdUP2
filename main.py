@@ -2,14 +2,15 @@ import argparse
 from pathlib import Path
 
 import lief
+from lief.PE import ResourceNode
 
 
-def padded_4_bytes_length(num):
+def padded_4_bytes_length(num: int) -> int:
     """https://stackoverflow.com/questions/11642210/computing-padding-required-for-n-byte-alignment"""
     return (4 - (num % 4)) % 4
 
 
-def padded_16_bytes_length(num):
+def padded_16_bytes_length(num: int) -> int:
     """https://stackoverflow.com/questions/11642210/computing-padding-required-for-n-byte-alignment"""
     return (16 - (num % 16)) % 16
 
@@ -45,12 +46,12 @@ def decrypt_bytes(data: bytes, key: int = 0xDEADBEEF) -> bytes:
     return bytes(byte_array)
 
 
-def resource_data_bytes(node) -> bytes | None:
-    if getattr(node, 'is_data', False):
+def resource_data_bytes(node: ResourceNode) -> bytes | None:
+    if node.is_data:
         content = node.content
         return content.tobytes() if hasattr(content, 'tobytes') else bytes(content)
 
-    for child in getattr(node, 'childs', []):
+    for child in node.childs:
         content = resource_data_bytes(child)
         if content is not None:
             return content
@@ -58,11 +59,9 @@ def resource_data_bytes(node) -> bytes | None:
     return None
 
 
-def main():
+def main() -> None:
     desp = 'UNdUP2: dUP2 Unpacker / Decompiler | Bakasura - 2024'
-    parser = argparse.ArgumentParser(
-        description=desp
-    )
+    parser = argparse.ArgumentParser(description=desp)
     parser.add_argument('file_path', type=str, help='dup2 exe')
     args = parser.parse_args()
 
@@ -72,12 +71,17 @@ def main():
 
     binary = lief.parse(args.file_path)
 
+    if binary is None:
+        raise Exception(f'{exe_path.name} is not a valid PE file')
+
     if not binary.has_resources:
         raise Exception(f'{exe_path.name} not have resources')
 
-    # root = binary.resources
     res_manager: lief.PE.ResourcesManager = binary.resources_manager
     rcdata = res_manager.get_node_type(lief.PE.ResourcesManager.TYPE.RCDATA)
+
+    if rcdata is None:
+        raise Exception(f'{exe_path.name} has no RCDATA resources')
 
     dll_bytes = resource_data_bytes(rcdata)
     if dll_bytes is None:
@@ -92,23 +96,26 @@ def main():
     print('Unpacked!')
 
 
-def make_dup2_file(dll_bytes: bytes, dup2_project_path: Path):
+def make_dup2_file(dll_bytes: bytes, dup2_project_path: Path) -> None:
     binary = lief.parse(dll_bytes)
+
+    if binary is None:
+        raise Exception('Could not parse dumped DLL')
 
     if not binary.has_resources:
         raise Exception('Dumped dll not have resources')
 
-    # root = binary.resources
     res_manager: lief.PE.ResourcesManager = binary.resources_manager
     rcdata = res_manager.get_node_type(lief.PE.ResourcesManager.TYPE.RCDATA)
 
-    dup2_content = b''
+    if rcdata is None:
+        raise Exception('Dumped DLL has no RCDATA resources')
+
+    dup2_content = bytearray()
     modules = 0
     modules_search_and_replace = 0
 
-    for i in rcdata.childs:
-        child: lief.PE.ResourceNode = i
-
+    for child in rcdata.childs:
         # plugins have name that is the HASH of content, we can skip safe
         if child.has_name:
             continue
@@ -125,24 +132,25 @@ def make_dup2_file(dll_bytes: bytes, dup2_project_path: Path):
             modules_search_and_replace += 1
 
         # put len and content
-        dup2_content += len(content).to_bytes(4, byteorder='little')
-        dup2_content += content
+        dup2_content.extend(len(content).to_bytes(4, byteorder='little'))
+        dup2_content.extend(content)
 
     # align
-    dup2_content = align_16(dup2_content)
+    dup2_content = bytearray(align_16(bytes(dup2_content)))
 
     # len of content + 16 bytes of header
     comment_address = len(dup2_content) + 0x10
 
-    # include empty comments
-    for i in range(0, modules_search_and_replace):
-        # 48 len + 48 empty bytes
-        dup2_content += b'\x30' + b'\x00' * (3 + 0x30)
+    # include empty comments (48 len + 48 empty bytes per module)
+    empty_comment_block = b'\x30' + b'\x00' * (3 + 0x30)
+    dup2_content.extend(empty_comment_block * modules_search_and_replace)
 
-    dup2_content = modules.to_bytes(4, byteorder='little') \
-                   + comment_address.to_bytes(4, byteorder='little') \
-                   + (b'\x00' * 8) \
-                   + dup2_content
+    dup2_content = (
+        modules.to_bytes(4, byteorder='little')
+        + comment_address.to_bytes(4, byteorder='little')
+        + (b'\x00' * 8)
+        + dup2_content
+    )
 
     # align
     dup2_content = align_16(dup2_content)
